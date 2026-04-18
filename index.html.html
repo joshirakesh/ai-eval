@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Evaluation System — Architecture Diagram (ADO #18479)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0F172A;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    user-select: none;
+    color: #E2E8F0;
+  }
+  #toolbar {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15,23,42,0.92);
+    border: 1px solid rgba(148,163,184,0.25);
+    border-radius: 12px;
+    padding: 8px 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #toolbar h1 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #94A3B8;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  #toolbar .sep { width: 1px; height: 20px; background: rgba(148,163,184,0.25); }
+  .tb-btn {
+    background: rgba(51,65,85,0.8);
+    border: 1px solid rgba(148,163,184,0.2);
+    color: #E2E8F0;
+    border-radius: 7px;
+    width: 30px; height: 30px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .tb-btn:hover { background: rgba(71,85,105,0.9); }
+  #btnTooltipToggle {
+    width: auto;
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  #zoomDisplay {
+    font-size: 12px;
+    color: #94A3B8;
+    min-width: 42px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  #canvas-wrap {
+    width: 100vw;
+    height: 100vh;
+    cursor: grab;
+    overflow: hidden;
+    position: relative;
+  }
+  #canvas-wrap.dragging { cursor: grabbing; }
+  #svg-root {
+    position: absolute;
+    transform-origin: 0 0;
+  }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    z-index: 200;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s;
+    max-width: 300px;
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip-inner {
+    background: rgba(15,23,42,0.97);
+    border: 1px solid rgba(148,163,184,0.3);
+    border-radius: 10px;
+    padding: 10px 13px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    font-size: 12px;
+    line-height: 1.55;
+    color: #CBD5E1;
+  }
+  #tooltip-inner strong {
+    display: block;
+    font-size: 13px;
+    color: #F1F5F9;
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>AI Evaluation System — ADO #18479</h1>
+  <div class="sep"></div>
+  <button class="tb-btn" id="btnZoomOut" title="Zoom out">−</button>
+  <span id="zoomDisplay">100%</span>
+  <button class="tb-btn" id="btnZoomIn" title="Zoom in">+</button>
+  <button class="tb-btn" id="btnReset" title="Reset view" style="font-size:13px;">⌂</button>
+  <div class="sep"></div>
+  <button class="tb-btn" id="btnTooltipToggle" title="Toggle tooltips — hover cards to see details" style="background:rgba(59,130,246,0.5);">💬 Tooltips: ON</button>
+</div>
+
+<div id="canvas-wrap">
+  <svg id="svg-root" width="1700" height="1060" viewBox="0 0 1700 1060"
+       xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <!-- Drop shadow filters -->
+      <filter id="shadow-sm" x="-10%" y="-10%" width="120%" height="120%">
+        <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.35"/>
+      </filter>
+      <filter id="shadow-md" x="-15%" y="-15%" width="130%" height="130%">
+        <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.4"/>
+      </filter>
+      <filter id="shadow-lg" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/>
+      </filter>
+
+      <!-- Gradients for group headers -->
+      <linearGradient id="grad-blue" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#1E40AF"/>
+        <stop offset="100%" stop-color="#1D4ED8"/>
+      </linearGradient>
+      <linearGradient id="grad-green" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#065F46"/>
+        <stop offset="100%" stop-color="#047857"/>
+      </linearGradient>
+      <linearGradient id="grad-red" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#7F1D1D"/>
+        <stop offset="100%" stop-color="#991B1B"/>
+      </linearGradient>
+      <linearGradient id="grad-violet" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#4C1D95"/>
+        <stop offset="100%" stop-color="#5B21B6"/>
+      </linearGradient>
+      <linearGradient id="grad-amber" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#78350F"/>
+        <stop offset="100%" stop-color="#92400E"/>
+      </linearGradient>
+
+      <!-- Card gradients (light) -->
+      <linearGradient id="card-blue" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1E3A5F"/>
+        <stop offset="100%" stop-color="#172A45"/>
+      </linearGradient>
+      <linearGradient id="card-green" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#064E3B"/>
+        <stop offset="100%" stop-color="#052E23"/>
+      </linearGradient>
+      <linearGradient id="card-red" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#7F1D1D"/>
+        <stop offset="100%" stop-color="#5A0E0E"/>
+      </linearGradient>
+      <linearGradient id="card-violet" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#3B0764"/>
+        <stop offset="100%" stop-color="#250448"/>
+      </linearGradient>
+      <linearGradient id="card-amber" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#78350F"/>
+        <stop offset="100%" stop-color="#4D2006"/>
+      </linearGradient>
+
+      <!-- Arrow markers -->
+      <marker id="arrow-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#64748B"/>
+      </marker>
+      <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#60A5FA"/>
+      </marker>
+      <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#34D399"/>
+      </marker>
+      <marker id="arrow-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#FBBF24"/>
+      </marker>
+      <marker id="arrow-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#A78BFA"/>
+      </marker>
+    </defs>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- BACKGROUND GRID (subtle) -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <rect width="1700" height="1060" fill="#0F172A"/>
+    <defs>
+      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(148,163,184,0.04)" stroke-width="1"/>
+      </pattern>
+    </defs>
+    <rect width="1700" height="1060" fill="url(#grid)"/>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 1: BENCHMARK DATA (top-right, amber)                       -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- Section height capped at 290 — stays well above Azure Services (y=358) -->
+    <rect x="1195" y="28" width="470" height="290" rx="16" ry="16"
+          fill="rgba(120,53,15,0.18)" stroke="#D97706" stroke-width="1.5"
+          filter="url(#shadow-md)"/>
+    <rect x="1195" y="28" width="470" height="36" rx="16" ry="16" fill="url(#grad-amber)"/>
+    <rect x="1195" y="46" width="470" height="18" fill="url(#grad-amber)"/>
+    <text x="1430" y="52" text-anchor="middle" font-size="13" font-weight="700"
+          fill="#FEF3C7" letter-spacing="0.5">BENCHMARK DATA</text>
+
+    <!-- ADO Repo card -->
+    <rect x="1215" y="76" width="210" height="110" rx="10"
+          fill="url(#card-amber)" stroke="#D97706" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="ado-repo" class="has-tooltip" style="cursor:pointer"/>
+    <text x="1225" y="95" font-size="11" font-weight="700" fill="#FCD34D">ADO Repo</text>
+    <text x="1225" y="110" font-size="10" fill="#FDE68A">Decisions.AI.Benchmarks</text>
+    <text x="1225" y="126" font-size="9" fill="#D97706">All benchmark meeting data lives here</text>
+    <text x="1225" y="140" font-size="9" fill="#D97706">in a fixed folder format per meeting</text>
+    <text x="1225" y="155" font-size="9" fill="#D97706">• meeting.json + test-case.json</text>
+    <text x="1225" y="169" font-size="9" fill="#D97706">• golden-output.txt</text>
+
+    <!-- Arrow: ADO Repo → CI Pipeline — label outside cards with background -->
+    <path d="M 1320 186 L 1320 200" stroke="#FBBF24" stroke-width="1.5"
+          marker-end="url(#arrow-amber)" fill="none"/>
+    <rect x="1322" y="186" width="75" height="13" rx="3" fill="rgba(15,23,42,0.85)"/>
+    <text x="1359" y="196" text-anchor="middle" font-size="8.5" fill="#FBBF24">merge to main</text>
+
+    <!-- CI Pipeline card -->
+    <rect x="1215" y="200" width="210" height="70" rx="10"
+          fill="url(#card-amber)" stroke="#D97706" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="ci-pipeline" class="has-tooltip" style="cursor:pointer"/>
+    <text x="1225" y="220" font-size="11" font-weight="700" fill="#FCD34D">CI Pipeline</text>
+    <text x="1225" y="236" font-size="9.5" fill="#FDE68A">Uploads to Azure Blob Storage</text>
+    <text x="1225" y="250" font-size="9.5" fill="#D97706">on every merge to main</text>
+
+    <!-- Azure Blob Storage card -->
+    <rect x="1445" y="76" width="200" height="108" rx="10"
+          fill="url(#card-amber)" stroke="#D97706" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="blob-storage" class="has-tooltip" style="cursor:pointer"/>
+    <text x="1455" y="96" font-size="11" font-weight="700" fill="#FCD34D">Azure Blob Storage</text>
+    <text x="1455" y="112" font-size="9.5" fill="#FDE68A">Single source of truth</text>
+    <text x="1455" y="127" font-size="9.5" fill="#D97706">• Managed Identity access</text>
+    <text x="1455" y="142" font-size="9.5" fill="#D97706">• Benchmark files store</text>
+    <text x="1455" y="157" font-size="9.5" fill="#D97706">• CI writes on every merge</text>
+    <text x="1455" y="172" font-size="9.5" fill="#D97706">• BenchmarkService reads</text>
+
+    <!-- Arrow: CI Pipeline → Blob Storage — right-angle, label outside cards -->
+    <path d="M 1425 235 L 1445 235 L 1445 184" stroke="#FBBF24" stroke-width="1.5"
+          stroke-dasharray="5,3"
+          marker-end="url(#arrow-amber)" fill="none"/>
+    <rect x="1448" y="198" width="46" height="13" rx="3" fill="rgba(15,23,42,0.85)"/>
+    <text x="1471" y="208" text-anchor="middle" font-size="8.5" fill="#FBBF24">uploads</text>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 2: SURFACES (top-left, blue) — 4 SURFACES                 -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <rect x="18" y="28" width="660" height="360" rx="16" ry="16"
+          fill="rgba(30,58,138,0.18)" stroke="#3B82F6" stroke-width="1.5"
+          filter="url(#shadow-md)"/>
+    <rect x="18" y="28" width="660" height="36" rx="16" ry="16" fill="url(#grad-blue)"/>
+    <rect x="18" y="46" width="660" height="18" fill="url(#grad-blue)"/>
+    <text x="348" y="52" text-anchor="middle" font-size="13" font-weight="700"
+          fill="#DBEAFE" letter-spacing="0.5">4 SURFACES — EVAL ENTRY POINTS</text>
+
+    <!-- Surface label badges -->
+    <rect x="34" y="64" width="58" height="14" rx="4" fill="rgba(59,130,246,0.3)"/>
+    <text x="63" y="74" text-anchor="middle" font-size="8" fill="#93C5FD" font-weight="700">S1</text>
+    <rect x="200" y="64" width="58" height="14" rx="4" fill="rgba(59,130,246,0.3)"/>
+    <text x="229" y="74" text-anchor="middle" font-size="8" fill="#93C5FD" font-weight="700">S2</text>
+    <rect x="366" y="64" width="58" height="14" rx="4" fill="rgba(59,130,246,0.3)"/>
+    <text x="395" y="74" text-anchor="middle" font-size="8" fill="#93C5FD" font-weight="700">S3</text>
+    <rect x="542" y="64" width="58" height="14" rx="4" fill="rgba(59,130,246,0.3)"/>
+    <text x="571" y="74" text-anchor="middle" font-size="8" fill="#93C5FD" font-weight="700">S4</text>
+
+    <!-- S1: Scheduled Pipeline card -->
+    <rect x="34" y="82" width="150" height="120" rx="10"
+          fill="url(#card-blue)" stroke="#3B82F6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="scheduled-pipeline" class="has-tooltip" style="cursor:pointer"/>
+    <text x="44" y="101" font-size="11" font-weight="700" fill="#93C5FD">Scheduled Pipeline</text>
+    <text x="44" y="116" font-size="9.5" fill="#BFDBFE">ADO nightly YAML</text>
+    <text x="44" y="131" font-size="9.5" fill="#60A5FA">• always: true</text>
+    <text x="44" y="145" font-size="9.5" fill="#60A5FA">• Runs all benchmarks</text>
+    <text x="44" y="159" font-size="9.5" fill="#60A5FA">• Results → Cosmos DB</text>
+    <text x="44" y="173" font-size="9.5" fill="#60A5FA">• Official nightly run</text>
+    <text x="44" y="190" font-size="8.5" fill="#4B72B0" font-style="italic">  + more config...</text>
+
+    <!-- S2: PR Pipeline card -->
+    <rect x="200" y="82" width="150" height="120" rx="10"
+          fill="url(#card-blue)" stroke="#3B82F6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="pr-pipeline" class="has-tooltip" style="cursor:pointer"/>
+    <text x="210" y="101" font-size="11" font-weight="700" fill="#93C5FD">PR Pipeline</text>
+    <text x="210" y="116" font-size="9.5" fill="#BFDBFE">ADO PR YAML</text>
+    <text x="210" y="131" font-size="9.5" fill="#60A5FA">• Auto-triggered on PR</text>
+    <text x="210" y="145" font-size="9.5" fill="#60A5FA">• Path filter (prompt files)</text>
+    <text x="210" y="159" font-size="9.5" fill="#60A5FA">• Posts eval report as</text>
+    <text x="210" y="173" font-size="9.5" fill="#60A5FA">  PR comment</text>
+    <text x="210" y="187" font-size="9.5" fill="#60A5FA">• Flags regressions</text>
+
+    <!-- S3: Dev Playground card -->
+    <!-- Change A: Angular not React. Change I: added "+ more features" hint. Extended h=140 -->
+    <rect x="366" y="82" width="160" height="140" rx="10"
+          fill="url(#card-blue)" stroke="#3B82F6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="dev-playground" class="has-tooltip" style="cursor:pointer"/>
+    <text x="376" y="101" font-size="11" font-weight="700" fill="#93C5FD">Dev Playground</text>
+    <text x="376" y="116" font-size="9.5" fill="#BFDBFE">Angular page — Decisions.Web</text>
+    <text x="376" y="131" font-size="9.5" fill="#60A5FA">• One-click Run All</text>
+    <text x="376" y="145" font-size="9.5" fill="#60A5FA">• SSE live progress</text>
+    <text x="376" y="159" font-size="9.5" fill="#60A5FA">• Scores + reasons display</text>
+    <text x="376" y="173" font-size="9.5" fill="#60A5FA">• Export results</text>
+    <text x="376" y="187" font-size="9.5" fill="#60A5FA">• Eval Sandbox mode</text>
+    <text x="376" y="208" font-size="8.5" fill="#4B72B0" font-style="italic">  + more features...</text>
+
+    <!-- Change D: IndexedDB card — now inside Surfaces section, below Dev Playground -->
+    <!-- Change C: "Persists between page reloads" (not "Cleared on page reload") -->
+    <rect x="366" y="232" width="160" height="106" rx="10"
+          fill="url(#card-blue)" stroke="#60A5FA" stroke-width="1" stroke-dasharray="5,3"
+          filter="url(#shadow-sm)"
+          data-tooltip="indexed-db" class="has-tooltip" style="cursor:pointer"/>
+    <text x="376" y="249" font-size="10" font-weight="700" fill="#93C5FD">IndexedDB (Dexie.js)</text>
+    <text x="376" y="263" font-size="9" fill="#BFDBFE">🌐 Browser-side storage</text>
+    <text x="376" y="277" font-size="9" fill="#60A5FA">• Dev Playground runs only</text>
+    <text x="376" y="291" font-size="9" fill="#60A5FA">• Persists between page reloads</text>
+    <text x="376" y="305" font-size="9" fill="#60A5FA">• No server persistence</text>
+    <text x="376" y="319" font-size="9" fill="#60A5FA">• GDPR safe (synthetic data)</text>
+
+    <!-- Arrow: Dev Playground → IndexedDB (short connector) -->
+    <path d="M 446 222 L 446 232" stroke="#60A5FA" stroke-width="1.5"
+          stroke-dasharray="4,2"
+          marker-end="url(#arrow-blue)" fill="none"/>
+
+    <!-- S4: Production card -->
+    <rect x="542" y="82" width="120" height="150" rx="10"
+          fill="url(#card-blue)" stroke="#3B82F6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="production" class="has-tooltip" style="cursor:pointer"/>
+    <text x="552" y="101" font-size="11" font-weight="700" fill="#93C5FD">Production</text>
+    <text x="552" y="116" font-size="9.5" fill="#BFDBFE">Live traffic sampling</text>
+    <text x="552" y="131" font-size="9.5" fill="#60A5FA">• Recap / Minutes</text>
+    <text x="552" y="145" font-size="9.5" fill="#60A5FA">• ~5% sampled</text>
+    <text x="552" y="159" font-size="9.5" fill="#60A5FA">• Fire &amp; forget</text>
+    <text x="552" y="175" font-size="9.5" fill="#EF4444">• GDPR: local mode</text>
+    <text x="552" y="189" font-size="9.5" fill="#EF4444">  only (locked)</text>
+    <text x="552" y="205" font-size="9.5" fill="#EF4444">• Real customer data</text>
+    <text x="552" y="220" font-size="9.5" fill="#EF4444">• Transcript discarded</text>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 3: MeetingCulture.AI.API (center, green) y=410            -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <rect x="18" y="408" width="1140" height="340" rx="16" ry="16"
+          fill="rgba(6,78,59,0.18)" stroke="#10B981" stroke-width="1.5"
+          filter="url(#shadow-md)"/>
+    <rect x="18" y="408" width="1140" height="36" rx="16" ry="16" fill="url(#grad-green)"/>
+    <rect x="18" y="426" width="1140" height="18" fill="url(#grad-green)"/>
+    <text x="588" y="431" text-anchor="middle" font-size="13" font-weight="700"
+          fill="#D1FAE5" letter-spacing="0.5">MeetingCulture.AI.API — .NET 8</text>
+
+    <!-- BenchmarkController card -->
+    <!-- Change H: added "+ and more endpoints..." hint -->
+    <rect x="34" y="456" width="220" height="150" rx="10"
+          fill="url(#card-green)" stroke="#10B981" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="benchmark-controller" class="has-tooltip" style="cursor:pointer"/>
+    <text x="44" y="475" font-size="11" font-weight="700" fill="#6EE7B7">BenchmarkController</text>
+    <text x="44" y="491" font-size="9.5" fill="#A7F3D0">HTTP + SSE endpoints</text>
+    <text x="44" y="507" font-size="9.5" fill="#34D399">GET /api/Benchmark/meetings</text>
+    <text x="44" y="522" font-size="9.5" fill="#34D399">POST /api/Benchmark/run (SSE)</text>
+    <text x="44" y="537" font-size="9.5" fill="#34D399">POST /api/Benchmark/adhoc</text>
+    <text x="44" y="552" font-size="9.5" fill="#34D399">POST /api/Benchmark/stop</text>
+    <text x="44" y="568" font-size="8.5" fill="#34D399" font-style="italic">  + and more endpoints...</text>
+    <text x="44" y="584" font-size="9.5" fill="#059669">Entry point for all 4 surfaces</text>
+
+    <!-- BenchmarkService card -->
+    <rect x="280" y="456" width="240" height="170" rx="10"
+          fill="url(#card-green)" stroke="#10B981" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="benchmark-service" class="has-tooltip" style="cursor:pointer"/>
+    <text x="290" y="475" font-size="11" font-weight="700" fill="#6EE7B7">BenchmarkService</text>
+    <text x="290" y="491" font-size="9.5" fill="#A7F3D0">Core orchestration logic</text>
+    <text x="290" y="507" font-size="9.5" fill="#34D399">• Fetches from Blob (MI)</text>
+    <text x="290" y="522" font-size="9.5" fill="#34D399">• SemaphoreSlim max 5</text>
+    <text x="290" y="537" font-size="9.5" fill="#34D399">• Orchestrates parallel runs</text>
+    <text x="290" y="552" font-size="9.5" fill="#34D399">• Calls Recap/MinutesService</text>
+    <text x="290" y="567" font-size="9.5" fill="#34D399">• Calls EvalServiceClient</text>
+    <text x="290" y="582" font-size="9.5" fill="#34D399">• Stores results (Cosmos/IDB)</text>
+    <text x="290" y="597" font-size="9.5" fill="#059669">• SSE progress streaming</text>
+    <text x="290" y="612" font-size="9.5" fill="#059669">• Cancellation token support</text>
+
+    <!-- Arrow: BenchmarkController → BenchmarkService -->
+    <path d="M 254 518" stroke="none"/>
+    <path d="M 254 518 L 280 518" stroke="#34D399" stroke-width="1.5"
+          marker-end="url(#arrow-green)" fill="none"/>
+
+    <!-- RecapService/MinutesService card -->
+    <rect x="548" y="456" width="200" height="110" rx="10"
+          fill="url(#card-green)" stroke="#10B981" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="recap-minutes" class="has-tooltip" style="cursor:pointer"/>
+    <text x="558" y="475" font-size="11" font-weight="700" fill="#6EE7B7">RecapService</text>
+    <text x="558" y="491" font-size="11" font-weight="700" fill="#6EE7B7">MinutesService</text>
+    <text x="558" y="509" font-size="9.5" fill="#A7F3D0">Existing endpoints reused</text>
+    <text x="558" y="524" font-size="9.5" fill="#34D399">POST /api/MeetingRecap</text>
+    <text x="558" y="539" font-size="9.5" fill="#34D399">POST /api/MeetingMinutes</text>
+    <text x="558" y="554" font-size="9.5" fill="#059669">Decision 8: No duplication</text>
+
+    <!-- Arrow: BenchmarkService → RecapService -->
+    <path d="M 520 510 L 548 510" stroke="#34D399" stroke-width="1.5"
+          marker-end="url(#arrow-green)" fill="none"/>
+
+    <!-- EvalServiceClient card -->
+    <rect x="548" y="586" width="200" height="100" rx="10"
+          fill="url(#card-green)" stroke="#10B981" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="eval-client" class="has-tooltip" style="cursor:pointer"/>
+    <text x="558" y="606" font-size="11" font-weight="700" fill="#6EE7B7">EvalServiceClient</text>
+    <text x="558" y="622" font-size="9.5" fill="#A7F3D0">IHttpClientFactory named client</text>
+    <text x="558" y="637" font-size="9.5" fill="#34D399">• API Key from Key Vault</text>
+    <text x="558" y="652" font-size="9.5" fill="#34D399">• POST /evaluate</text>
+    <text x="558" y="667" font-size="9.5" fill="#34D399">• POST /evaluate/adhoc</text>
+    <text x="558" y="681" font-size="9.5" fill="#059669">• Internal ingress only</text>
+
+    <!-- Arrow: BenchmarkService → EvalServiceClient -->
+    <path d="M 430 626 L 548 626" stroke="#34D399" stroke-width="1.5"
+          marker-end="url(#arrow-green)" fill="none"/>
+
+    <!-- ProductionSamplingService card -->
+    <rect x="792" y="456" width="210" height="175" rx="10"
+          fill="url(#card-green)" stroke="#10B981" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="prod-sampling" class="has-tooltip" style="cursor:pointer"/>
+    <text x="802" y="475" font-size="11" font-weight="700" fill="#6EE7B7">ProductionSamplingService</text>
+    <text x="802" y="492" font-size="9.5" fill="#A7F3D0">Fire &amp; forget async eval</text>
+    <text x="802" y="508" font-size="9.5" fill="#34D399">_ = EvalAndStoreAsync()</text>
+    <text x="802" y="524" font-size="9.5" fill="#34D399">ShouldSample() logic:</text>
+    <text x="802" y="539" font-size="9.5" fill="#34D399">• Excluded tenants skip</text>
+    <text x="802" y="554" font-size="9.5" fill="#34D399">• Boosted model tenants</text>
+    <text x="802" y="569" font-size="9.5" fill="#34D399">• New tenant first 20</text>
+    <text x="802" y="584" font-size="9.5" fill="#34D399">• Daily cap enforced</text>
+    <text x="802" y="599" font-size="9.5" fill="#EF4444">• GDPR: local mode only</text>
+    <text x="802" y="611" font-size="9.5" fill="#EF4444">• Transcript discarded</text>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 4: EvalService (bottom, red) y=770                        -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <rect x="18" y="770" width="1140" height="258" rx="16" ry="16"
+          fill="rgba(127,29,29,0.18)" stroke="#EF4444" stroke-width="1.5"
+          filter="url(#shadow-md)"/>
+    <rect x="18" y="770" width="1140" height="36" rx="16" ry="16" fill="url(#grad-red)"/>
+    <rect x="18" y="788" width="1140" height="18" fill="url(#grad-red)"/>
+    <text x="588" y="793" text-anchor="middle" font-size="13" font-weight="700"
+          fill="#FEE2E2" letter-spacing="0.5">Decisions.AI.EvalService — Python / FastAPI — Azure Container Apps (scale-to-zero)</text>
+
+    <!-- /evaluate endpoint card -->
+    <rect x="34" y="820" width="210" height="90" rx="10"
+          fill="url(#card-red)" stroke="#EF4444" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="evaluate-endpoint" class="has-tooltip" style="cursor:pointer"/>
+    <text x="44" y="838" font-size="11" font-weight="700" fill="#FCA5A5">API Endpoints</text>
+    <text x="44" y="854" font-size="9.5" fill="#FECACA">POST /evaluate</text>
+    <text x="44" y="869" font-size="9.5" fill="#FECACA">POST /evaluate/adhoc</text>
+    <text x="44" y="884" font-size="9.5" fill="#F87171">API Key auth (Key Vault)</text>
+    <text x="44" y="898" font-size="9.5" fill="#F87171">Internal ingress only</text>
+
+    <!-- CustomEvaluator card -->
+    <rect x="268" y="820" width="230" height="178" rx="10"
+          fill="url(#card-red)" stroke="#EF4444" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="custom-evaluator" class="has-tooltip" style="cursor:pointer"/>
+    <text x="278" y="838" font-size="11" font-weight="700" fill="#FCA5A5">CustomEvaluator</text>
+    <text x="278" y="854" font-size="9.5" fill="#FECACA">Generic Python class</text>
+    <text x="278" y="869" font-size="9.5" fill="#F87171">• Loads .txt prompt files</text>
+    <text x="278" y="884" font-size="9.5" fill="#F87171">• Azure AI Eval SDK</text>
+    <text x="278" y="899" font-size="9.5" fill="#F87171">• LLM-as-Judge (G-Eval)</text>
+    <text x="278" y="914" font-size="9.5" fill="#F87171">• Score 1–5 + reason text</text>
+    <text x="278" y="929" font-size="9.5" fill="#F87171">• New metric = new .txt</text>
+    <text x="278" y="944" font-size="9.5" fill="#EF4444">LOCAL MODE ONLY</text>
+    <text x="278" y="959" font-size="9.5" fill="#EF4444">Never cloud mode</text>
+
+    <!-- Eval Prompt Files card -->
+    <rect x="524" y="820" width="230" height="178" rx="10"
+          fill="url(#card-red)" stroke="#EF4444" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="eval-prompts" class="has-tooltip" style="cursor:pointer"/>
+    <text x="534" y="838" font-size="11" font-weight="700" fill="#FCA5A5">Eval Prompt Files (.txt)</text>
+    <text x="534" y="854" font-size="9.5" fill="#FECACA">Base metrics:</text>
+    <text x="534" y="869" font-size="9.5" fill="#F87171">  groundedness.txt</text>
+    <text x="534" y="884" font-size="9.5" fill="#F87171">  coherence.txt</text>
+    <text x="534" y="899" font-size="9.5" fill="#F87171">  fluency.txt</text>
+    <text x="534" y="915" font-size="9.5" fill="#FECACA">Feature-specific:</text>
+    <text x="534" y="930" font-size="9.5" fill="#F87171">  completeness.txt</text>
+    <text x="534" y="945" font-size="9.5" fill="#F87171">  action_item_capture.txt</text>
+    <text x="534" y="960" font-size="9.5" fill="#F87171">  decision_capture.txt</text>
+    <text x="534" y="975" font-size="9.5" fill="#FECACA">  multi_speaker_coverage.txt</text>
+
+    <!-- Azure AI Eval SDK card -->
+    <rect x="778" y="820" width="200" height="100" rx="10"
+          fill="url(#card-red)" stroke="#EF4444" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="ai-eval-sdk" class="has-tooltip" style="cursor:pointer"/>
+    <text x="788" y="838" font-size="11" font-weight="700" fill="#FCA5A5">Azure AI Evaluation SDK</text>
+    <text x="788" y="854" font-size="9.5" fill="#FECACA">LOCAL MODE ONLY</text>
+    <text x="788" y="869" font-size="9.5" fill="#F87171">Never cloud mode on real data</text>
+    <text x="788" y="884" font-size="9.5" fill="#F87171">GDPR safe — no data leaves</text>
+    <text x="788" y="899" font-size="9.5" fill="#F87171">Invokes Azure OpenAI judge</text>
+    <text x="788" y="914" font-size="9.5" fill="#F87171">Our own AOAI deployment</text>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- SECTION 5: AZURE SERVICES (right column, violet) y=358            -->
+    <!-- Change B: IndexedDB removed from here — now in Surfaces section   -->
+    <!-- Change F: Azure OpenAI now shows "separate deployment" note        -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <rect x="1195" y="358" width="470" height="660" rx="16" ry="16"
+          fill="rgba(76,29,149,0.18)" stroke="#8B5CF6" stroke-width="1.5"
+          filter="url(#shadow-md)"/>
+    <rect x="1195" y="358" width="470" height="36" rx="16" ry="16" fill="url(#grad-violet)"/>
+    <rect x="1195" y="376" width="470" height="18" fill="url(#grad-violet)"/>
+    <text x="1430" y="381" text-anchor="middle" font-size="13" font-weight="700"
+          fill="#EDE9FE" letter-spacing="0.5">AZURE SERVICES</text>
+
+    <!-- Cosmos DB card -->
+    <rect x="1215" y="406" width="430" height="110" rx="10"
+          fill="url(#card-violet)" stroke="#8B5CF6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="cosmos-db" class="has-tooltip" style="cursor:pointer"/>
+    <text x="1225" y="424" font-size="11" font-weight="700" fill="#C4B5FD">Cosmos DB</text>
+    <text x="1225" y="440" font-size="9.5" fill="#DDD6FE">Scores + metadata only — never raw transcripts</text>
+    <text x="1225" y="455" font-size="9.5" fill="#A78BFA">• Official runs: PR Pipeline, Scheduled, Production sampling</text>
+    <text x="1225" y="470" font-size="9.5" fill="#A78BFA">• Managed Identity access (no secrets in config)</text>
+    <text x="1225" y="485" font-size="9.5" fill="#A78BFA">• GDPR: no personal data at rest</text>
+    <text x="1225" y="500" font-size="9.5" fill="#A78BFA">• Trend analysis and regression baseline</text>
+
+    <!-- Key Vault card -->
+    <rect x="1215" y="536" width="205" height="100" rx="10"
+          fill="url(#card-violet)" stroke="#8B5CF6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="key-vault" class="has-tooltip" style="cursor:pointer"/>
+    <text x="1225" y="554" font-size="11" font-weight="700" fill="#C4B5FD">Azure Key Vault</text>
+    <text x="1225" y="570" font-size="9.5" fill="#DDD6FE">Secrets management</text>
+    <text x="1225" y="585" font-size="9.5" fill="#A78BFA">• EvalService API Key</text>
+    <text x="1225" y="600" font-size="9.5" fill="#A78BFA">• Managed Identity access</text>
+    <text x="1225" y="615" font-size="9.5" fill="#A78BFA">• No secrets in config</text>
+
+    <!-- Change F: Azure OpenAI card — "dedicated eval deployment, separate from production" -->
+    <rect x="1440" y="536" width="205" height="130" rx="10"
+          fill="url(#card-violet)" stroke="#8B5CF6" stroke-width="1"
+          filter="url(#shadow-sm)"
+          data-tooltip="azure-openai" class="has-tooltip" style="cursor:pointer"/>
+    <text x="1450" y="554" font-size="11" font-weight="700" fill="#C4B5FD">Azure OpenAI</text>
+    <text x="1450" y="570" font-size="9.5" fill="#DDD6FE">Dedicated eval deployment</text>
+    <rect x="1450" y="577" width="185" height="15" rx="4" fill="rgba(239,68,68,0.2)"/>
+    <text x="1543" y="588" text-anchor="middle" font-size="8.5" fill="#FCA5A5" font-weight="700">⚠ Separate from production deployment</text>
+    <text x="1450" y="604" font-size="9.5" fill="#A78BFA">• Not shared MS infra</text>
+    <text x="1450" y="619" font-size="9.5" fill="#A78BFA">• LLM judge for G-Eval</text>
+    <text x="1450" y="634" font-size="9.5" fill="#A78BFA">• Local mode only</text>
+    <text x="1450" y="649" font-size="9.5" fill="#A78BFA">• GDPR compliant</text>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- CROSS-SECTION ARROWS                                               -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- All 4 Surfaces → BenchmarkController via a shared horizontal bus at y=385 -->
+    <!-- S1 Scheduled Pipeline → BenchmarkController -->
+    <path d="M 109 202 L 109 395 L 109 456" stroke="#60A5FA" stroke-width="1.5"
+          stroke-dasharray="6,3"
+          marker-end="url(#arrow-blue)" fill="none"/>
+
+    <!-- S2 PR Pipeline → BenchmarkController -->
+    <path d="M 275 202 L 275 385 L 109 385 L 109 410" stroke="#60A5FA" stroke-width="1.5"
+          stroke-dasharray="6,3" fill="none"/>
+
+    <!-- S3 Dev Playground → BenchmarkController via SSE -->
+    <path d="M 446 222 L 446 338 L 109 338 L 109 370" stroke="#60A5FA" stroke-width="1.5"
+          stroke-dasharray="6,3" fill="none"/>
+
+    <!-- Shared label for surface→controller -->
+    <rect x="36" y="370" width="138" height="15" rx="4" fill="rgba(15,23,42,0.8)"/>
+    <text x="105" y="381" text-anchor="middle" font-size="8.5" fill="#93C5FD">HTTP / SSE → BenchmarkController</text>
+
+    <!-- S4 Production → ProductionSamplingService -->
+    <path d="M 602 232 L 602 395 L 897 395 L 897 456" stroke="#60A5FA" stroke-width="1.5"
+          stroke-dasharray="6,3"
+          marker-end="url(#arrow-blue)" fill="none"/>
+    <text x="750" y="391" text-anchor="middle" font-size="8.5" fill="#60A5FA">fire &amp; forget</text>
+
+    <!-- Blob Storage → BenchmarkService (Managed Identity) -->
+    <!-- Arrow: right from Blob bottom, down vertical at x=1180, left into BenchmarkService -->
+    <path d="M 1445 130 L 1180 130 L 1180 530 L 520 530" stroke="#FBBF24" stroke-width="1.5"
+          stroke-dasharray="6,3"
+          marker-end="url(#arrow-amber)" fill="none"/>
+    <!-- Label sits in the clear gap between sections (y≈345), left of the vertical line at x=1180 -->
+    <rect x="1042" y="340" width="132" height="14" rx="3" fill="rgba(15,23,42,0.9)"/>
+    <text x="1108" y="351" text-anchor="middle" font-size="8.5" fill="#FBBF24">Managed Identity fetch</text>
+
+    <!-- BenchmarkService → Cosmos DB (official runs) -->
+    <path d="M 430 626 L 430 710 L 1170 710 L 1170 461 L 1215 461" stroke="#A78BFA" stroke-width="1.5"
+          stroke-dasharray="5,3"
+          marker-end="url(#arrow-violet)" fill="none"/>
+    <text x="1115" y="706" font-size="8.5" fill="#A78BFA">official runs</text>
+
+    <!-- Change B: BenchmarkService → IndexedDB — rerouted via left side (IndexedDB now near Dev Playground) -->
+    <path d="M 280 530 L 12 530 L 12 285 L 366 285" stroke="#60A5FA" stroke-width="1.5"
+          stroke-dasharray="5,3"
+          marker-end="url(#arrow-blue)" fill="none"/>
+    <rect x="22" y="273" width="50" height="14" rx="4" fill="rgba(15,23,42,0.85)"/>
+    <text x="47" y="283" text-anchor="middle" font-size="8.5" fill="#60A5FA">dev runs</text>
+
+    <!-- EvalServiceClient → /evaluate (down into EvalService) -->
+    <path d="M 648 686 L 648 760 L 140 760 L 140 820" stroke="#34D399" stroke-width="2"
+          marker-end="url(#arrow-green)" fill="none"/>
+    <text x="580" y="756" font-size="9" fill="#34D399" font-weight="600">POST /evaluate</text>
+
+    <!-- ProductionSamplingService → EvalServiceClient -->
+    <path d="M 792 610 L 648 610 L 648 686" stroke="#34D399" stroke-width="1.5"
+          marker-end="url(#arrow-green)" fill="none"/>
+    <text x="720" y="605" text-anchor="middle" font-size="8.5" fill="#34D399">→ EvalServiceClient</text>
+
+    <!-- ProductionSamplingService → Cosmos DB -->
+    <path d="M 1002 510 L 1170 510 L 1170 461 L 1215 461" stroke="#A78BFA" stroke-width="1.5"
+          stroke-dasharray="5,3"
+          marker-end="url(#arrow-violet)" fill="none"/>
+    <text x="1095" y="505" font-size="8.5" fill="#A78BFA">results</text>
+
+    <!-- Key Vault → EvalServiceClient -->
+    <path d="M 1215 591 L 1170 591 L 1170 636 L 748 636" stroke="#A78BFA" stroke-width="1.5"
+          stroke-dasharray="5,3"
+          marker-end="url(#arrow-violet)" fill="none"/>
+    <text x="1060" y="630" font-size="8.5" fill="#A78BFA">API Key</text>
+
+    <!-- CustomEvaluator → Azure OpenAI (separate eval deployment) -->
+    <path d="M 524 885 L 1185 885 L 1185 601 L 1440 601" stroke="#A78BFA" stroke-width="1.5"
+          marker-end="url(#arrow-violet)" fill="none"/>
+    <text x="1060" y="880" text-anchor="middle" font-size="8.5" fill="#A78BFA">LLM judge call (local mode only)</text>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- LEGEND                                                             -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <rect x="18" y="688" width="1140" height="74" rx="12"
+          fill="rgba(15,23,42,0.85)" stroke="rgba(148,163,184,0.2)" stroke-width="1"/>
+    <text x="34" y="705" font-size="11" font-weight="700" fill="#94A3B8">LEGEND</text>
+
+    <!-- Color swatches -->
+    <rect x="34" y="714" width="14" height="14" rx="3" fill="#3B82F6"/>
+    <text x="52" y="725" font-size="10" fill="#93C5FD">Surfaces — 4 entry points (Blue)</text>
+    <rect x="240" y="714" width="14" height="14" rx="3" fill="#10B981"/>
+    <text x="258" y="725" font-size="10" fill="#6EE7B7">MeetingCulture.AI.API (Green)</text>
+    <rect x="450" y="714" width="14" height="14" rx="3" fill="#EF4444"/>
+    <text x="468" y="725" font-size="10" fill="#FCA5A5">EvalService (Red)</text>
+    <rect x="580" y="714" width="14" height="14" rx="3" fill="#8B5CF6"/>
+    <text x="598" y="725" font-size="10" fill="#C4B5FD">Azure Services (Violet)</text>
+    <rect x="745" y="714" width="14" height="14" rx="3" fill="#D97706"/>
+    <text x="763" y="725" font-size="10" fill="#FCD34D">Benchmark Data (Amber)</text>
+
+    <!-- Arrow legend -->
+    <line x1="34" y1="746" x2="70" y2="746" stroke="#64748B" stroke-width="1.5"
+          marker-end="url(#arrow-gray)"/>
+    <text x="76" y="750" font-size="10" fill="#94A3B8">Direct call</text>
+    <line x1="170" y1="746" x2="206" y2="746" stroke="#64748B" stroke-width="1.5"
+          stroke-dasharray="5,3" marker-end="url(#arrow-gray)"/>
+    <text x="212" y="750" font-size="10" fill="#94A3B8">Async / Managed Identity</text>
+    <line x1="370" y1="746" x2="406" y2="746" stroke="#64748B" stroke-width="1.5"
+          stroke-dasharray="4,2" marker-end="url(#arrow-gray)"/>
+    <text x="412" y="750" font-size="10" fill="#94A3B8">Browser-side connection</text>
+
+    <!-- GDPR notice -->
+    <rect x="870" y="714" width="270" height="48" rx="7"
+          fill="rgba(127,29,29,0.4)" stroke="#EF4444" stroke-width="1"/>
+    <text x="1005" y="730" text-anchor="middle" font-size="9" font-weight="700" fill="#FCA5A5">Decision 5 (Locked): Local evaluation mode only</text>
+    <text x="1005" y="744" text-anchor="middle" font-size="9" fill="#FCA5A5">for any surface touching real customer data.</text>
+    <text x="1005" y="758" text-anchor="middle" font-size="9" fill="#EF4444">Cloud mode permanently banned.</text>
+
+  </svg>
+</div>
+
+<div id="tooltip"><div id="tooltip-inner"></div></div>
+
+<script>
+// ─── Pan & Zoom ───────────────────────────────────────────────────────────────
+const wrap = document.getElementById('canvas-wrap');
+const svg  = document.getElementById('svg-root');
+const zoomDisplay = document.getElementById('zoomDisplay');
+
+let scale = 0.72, tx = 0, ty = 0;
+let dragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+
+function applyTransform() {
+  svg.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+  zoomDisplay.textContent = Math.round(scale * 100) + '%';
+}
+
+function centerFit() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const svgW = 1700, svgH = 1060;
+  const s = Math.min((vw - 40) / svgW, (vh - 80) / svgH);
+  scale = Math.round(s * 100) / 100;
+  tx = (vw - svgW * scale) / 2;
+  ty = (vh - svgH * scale) / 2;
+  applyTransform();
+}
+
+centerFit();
+window.addEventListener('resize', centerFit);
+
+wrap.addEventListener('mousedown', e => {
+  dragging = true;
+  startX = e.clientX; startY = e.clientY;
+  startTx = tx; startTy = ty;
+  wrap.classList.add('dragging');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  tx = startTx + (e.clientX - startX);
+  ty = startTy + (e.clientY - startY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging = false; wrap.classList.remove('dragging'); });
+
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const newScale = Math.min(Math.max(scale * delta, 0.15), 4);
+  tx = mx - (mx - tx) * (newScale / scale);
+  ty = my - (my - ty) * (newScale / scale);
+  scale = newScale;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('btnZoomIn').addEventListener('click', () => {
+  const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+  const newScale = Math.min(scale * 1.2, 4);
+  tx = cx - (cx - tx) * (newScale / scale);
+  ty = cy - (cy - ty) * (newScale / scale);
+  scale = newScale; applyTransform();
+});
+document.getElementById('btnZoomOut').addEventListener('click', () => {
+  const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+  const newScale = Math.max(scale / 1.2, 0.15);
+  tx = cx - (cx - tx) * (newScale / scale);
+  ty = cy - (cy - ty) * (newScale / scale);
+  scale = newScale; applyTransform();
+});
+document.getElementById('btnReset').addEventListener('click', centerFit);
+
+// Touch support
+let lastTouchDist = null;
+wrap.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    dragging = true;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    startTx = tx; startTy = ty;
+  } else if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastTouchDist = Math.hypot(dx, dy);
+  }
+}, { passive: true });
+wrap.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && dragging) {
+    tx = startTx + (e.touches[0].clientX - startX);
+    ty = startTy + (e.touches[0].clientY - startY);
+    applyTransform();
+  } else if (e.touches.length === 2 && lastTouchDist) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.hypot(dx, dy);
+    const delta = dist / lastTouchDist;
+    const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const newScale = Math.min(Math.max(scale * delta, 0.15), 4);
+    tx = cx - (cx - tx) * (newScale / scale);
+    ty = cy - (cy - ty) * (newScale / scale);
+    scale = newScale; lastTouchDist = dist;
+    applyTransform();
+  }
+}, { passive: false });
+wrap.addEventListener('touchend', () => { dragging = false; lastTouchDist = null; });
+
+// ─── Tooltip Toggle ───────────────────────────────────────────────────────────
+let tooltipsEnabled = true;
+const btnTooltipToggle = document.getElementById('btnTooltipToggle');
+const tooltip = document.getElementById('tooltip');
+const tooltipInner = document.getElementById('tooltip-inner');
+
+btnTooltipToggle.addEventListener('click', () => {
+  tooltipsEnabled = !tooltipsEnabled;
+  btnTooltipToggle.textContent = tooltipsEnabled ? '💬 Tooltips: ON' : '💬 Tooltips: OFF';
+  btnTooltipToggle.style.background = tooltipsEnabled
+    ? 'rgba(59,130,246,0.5)'
+    : 'rgba(51,65,85,0.8)';
+  if (!tooltipsEnabled) tooltip.classList.remove('visible');
+});
+
+// ─── Tooltips ─────────────────────────────────────────────────────────────────
+const tooltipData = {
+  'ado-repo': {
+    title: 'ADO Repo: Decisions.AI.Benchmarks',
+    body: 'Azure DevOps Git repository containing all benchmark test data. Each benchmark is a folder with three files:\n• meeting.json — transcript with speaker turns, timestamps, and meeting metadata\n• test-case.json — which feature to test (Recap or Minutes), expected behaviour, tags\n• golden-output.txt — human-written reference answer for scoring\n\nMerging to main triggers the CI pipeline which syncs files to Blob Storage.'
+  },
+  'dataset-profile': {
+    title: 'Benchmark Dataset Profile',
+    body: 'Target: 20–30 high-quality curated benchmark meetings.\n\nMeeting types: 1:1, team standups, client meetings, project reviews, all-hands\n\nDuration coverage: short (<30 min), medium (30–60 min), long (>60 min)\n\nSpeaker count: 2 to 10+ speakers per meeting\n\nEdge cases included:\n• Meeting with no decisions made\n• Single dominant speaker (90%+ of content)\n• Very short meeting (<5 min)\n• Very dense meeting (many action items)\n• Multi-language mixed meeting\n\nTranscripts must be anonymised or synthetic — no real personal data in the repo.'
+  },
+  'ci-pipeline': {
+    title: 'CI Pipeline',
+    body: 'Azure DevOps pipeline that runs on every merge to main. Automatically uploads the latest benchmark files to Azure Blob Storage, ensuring the single source of truth is always current. No manual steps required.'
+  },
+  'blob-storage': {
+    title: 'Azure Blob Storage — Benchmark Store',
+    body: 'Single source of truth for all benchmark files. BenchmarkService reads from here at runtime using Managed Identity (no connection strings or secrets). Updated by CI on every merge to main. Isolated from production transcript storage.'
+  },
+  'scheduled-pipeline': {
+    title: 'S1 — Scheduled Pipeline (ADO YAML)',
+    body: 'Nightly ADO pipeline with "always: true" so it never skips even if no code changes. Runs the full benchmark suite across all test cases. Results are stored to Cosmos DB as the official nightly baseline. Used to track quality trends over time.'
+  },
+  'pr-pipeline': {
+    title: 'S2 — PR Pipeline (ADO YAML)',
+    body: 'Automatically triggered on every Pull Request. Uses path filters to only trigger when prompt-related files change. Runs the benchmark suite and posts a structured eval report as a PR comment. Flags any regressions compared to the main branch baseline. Can block merge if configured thresholds are breached.'
+  },
+  'dev-playground': {
+    title: 'S3 — Dev Playground (Angular — Decisions.Web)',
+    body: 'Angular page in Decisions.Web for developers. Features: one-click "Run All" benchmarks, real-time SSE progress streaming, scores and reasons displayed inline, export to CSV/JSON, and a sandbox mode for ad-hoc evaluation without saving. Results stored in IndexedDB (browser-side, persists between page reloads).'
+  },
+  'indexed-db': {
+    title: 'IndexedDB (Dexie.js) — Browser Storage',
+    body: 'Client-side storage for the Dev Playground. Uses Dexie.js wrapper for clean async API. Stores results in the browser — persists between page reloads but never sent to any server. Not an Azure service. No GDPR concerns as Dev Playground only runs against synthetic benchmark data, never real customer transcripts.'
+  },
+  'production': {
+    title: 'S4 — Production Surface — Live Traffic Sampling',
+    body: 'Real Recap and Minutes requests from live customers. ~5% are sampled for evaluation using ShouldSample() logic. GDPR Decision 5 (Locked): local evaluation mode ONLY. No real transcript data leaves the service boundary. Results stored to Cosmos DB. Raw transcripts discarded immediately after eval.'
+  },
+  'benchmark-controller': {
+    title: 'BenchmarkController (.NET 8)',
+    body: 'ASP.NET Core controller — single entry point for all 4 surfaces.\n\nKey endpoints:\n• GET /api/Benchmark/meetings — list available test cases\n• POST /api/Benchmark/run — run benchmarks with SSE streaming\n• POST /api/Benchmark/adhoc — run a single ad-hoc eval\n• POST /api/Benchmark/stop — cancel a running session\n...and more endpoints as the system grows.'
+  },
+  'benchmark-service': {
+    title: 'BenchmarkService',
+    body: 'Core orchestration service. Fetches benchmark files from Blob Storage via Managed Identity. Uses SemaphoreSlim(5) for parallel run limiting. Calls the appropriate RecapService or MinutesService endpoint, then calls EvalServiceClient for scoring. Streams progress via SSE. Stores results to Cosmos DB (official runs) or IndexedDB (dev playground runs).'
+  },
+  'recap-minutes': {
+    title: 'RecapService / MinutesService (Existing)',
+    body: 'Decision 8 (Locked): No code duplication. The exact same /api/MeetingRecap and /api/MeetingMinutes endpoints used in production are called during evaluation. This ensures benchmark results reflect real production behaviour, not a parallel implementation.'
+  },
+  'eval-client': {
+    title: 'EvalServiceClient',
+    body: 'HTTP client wrapper using IHttpClientFactory named client pattern. API Key retrieved from Azure Key Vault at startup via Managed Identity. Calls EvalService endpoints:\n• POST /evaluate — standard batch evaluation\n• POST /evaluate/adhoc — single case evaluation\nInternal ingress only — not publicly accessible.'
+  },
+  'prod-sampling': {
+    title: 'ProductionSamplingService',
+    body: 'Handles background eval of real production traffic. Uses "_ = EvalAndStoreAsync()" fire-and-forget pattern to avoid blocking the user response.\n\nShouldSample() rules:\n• Skip excluded tenants\n• Boost new model rollouts\n• Always sample first 20 requests from new tenants\n• Daily cap per tenant\n• 5% random baseline\n\nGDPR: transcript discarded immediately after eval. Local mode enforced.'
+  },
+  'evaluate-endpoint': {
+    title: 'EvalService API Endpoints',
+    body: 'FastAPI application deployed on Azure Container Apps with scale-to-zero.\n• POST /evaluate — evaluate a batch of test cases\n• POST /evaluate/adhoc — evaluate a single case on demand\nAuthentication: API Key (stored in Key Vault). Internal ingress only — not reachable from the public internet.'
+  },
+  'custom-evaluator': {
+    title: 'CustomEvaluator (Python)',
+    body: 'Generic Python evaluator class. Loads metric definitions from .txt prompt files at startup. Uses Azure AI Evaluation SDK in LOCAL MODE ONLY — never cloud mode. Implements G-Eval (LLM-as-Judge) pattern: sends transcript + output + golden answer + prompt to Azure OpenAI, receives score (1–5) and a human-readable reason. Adding a new metric requires only a new .txt file — no code changes.'
+  },
+  'eval-prompts': {
+    title: 'Eval Prompt Files (.txt)',
+    body: 'Plain text files defining evaluation rubrics for the LLM judge.\n\nBase: groundedness.txt, coherence.txt, fluency.txt\n\nFeature-specific: completeness.txt, action_item_capture.txt, decision_capture.txt\n\nInput-specific: multi_speaker_coverage.txt, minutes_style_fidelity.txt\n\nExtensible: drop a new .txt file in the prompts folder to add a metric — no code changes required.'
+  },
+  'ai-eval-sdk': {
+    title: 'Azure AI Evaluation SDK',
+    body: 'Microsoft\'s official evaluation SDK. Configured in LOCAL MODE ONLY as required by Decision 5 (Locked). In local mode, the LLM judge call goes directly to our own Azure OpenAI deployment without any data leaving our tenant. Cloud mode (which would send data to Microsoft\'s shared eval infrastructure) is permanently banned for any surface touching real customer data.'
+  },
+  'cosmos-db': {
+    title: 'Cosmos DB — Results Store',
+    body: 'Stores evaluation scores and metadata only. Explicitly no raw transcripts stored (GDPR compliance). Receives results from three official surfaces: PR Pipeline runs, Scheduled nightly runs, and Production sampling. Accessed via Managed Identity. Used for trend analysis, regression detection, and quality reporting.'
+  },
+  'key-vault': {
+    title: 'Azure Key Vault',
+    body: 'Centralized secret storage. Holds the EvalService API Key used by EvalServiceClient. All access via Managed Identity — no connection strings or credentials in application config or environment variables. Rotated on a schedule without application changes.'
+  },
+  'azure-openai': {
+    title: 'Azure OpenAI — LLM Judge (Dedicated Eval Deployment)',
+    body: 'A DEDICATED Azure OpenAI deployment used exclusively for evaluation — this is NOT the same deployment used in production for Recap/Minutes generation. Keeping them separate ensures eval load does not affect production latency and vice versa. Called in local mode only via the Azure AI Evaluation SDK. GDPR compliant: data stays within our Azure tenant. Provides scores 1–5 and human-readable reason strings for each metric.'
+  }
+};
+
+document.querySelectorAll('.has-tooltip').forEach(el => {
+  el.addEventListener('mouseenter', e => {
+    if (!tooltipsEnabled) return;
+    const key = el.getAttribute('data-tooltip');
+    const data = tooltipData[key];
+    if (!data) return;
+    tooltipInner.innerHTML = `<strong>${data.title}</strong>${data.body.replace(/\n/g, '<br>')}`;
+    tooltip.classList.add('visible');
+    positionTooltip(e);
+  });
+  el.addEventListener('mousemove', e => {
+    if (!tooltipsEnabled) return;
+    positionTooltip(e);
+  });
+  el.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+});
+
+function positionTooltip(e) {
+  const pad = 14;
+  const tw = tooltip.offsetWidth || 280;
+  const th = tooltip.offsetHeight || 100;
+  let x = e.clientX + pad;
+  let y = e.clientY + pad;
+  if (x + tw > window.innerWidth - 10) x = e.clientX - tw - pad;
+  if (y + th > window.innerHeight - 10) y = e.clientY - th - pad;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top  = y + 'px';
+}
+</script>
+</body>
+</html>
